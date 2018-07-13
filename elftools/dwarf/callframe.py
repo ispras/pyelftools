@@ -97,7 +97,7 @@ class CallFrameInfo(object):
 
         dwarf_format = 64 if entry_length == 0xFFFFFFFF else 32
 
-        entry_structs = DWARFStructs(
+        entry_structs = DWARFStructs.get(
             little_endian=self.base_structs.little_endian,
             dwarf_format=dwarf_format,
             address_size=self.base_structs.address_size)
@@ -128,7 +128,7 @@ class CallFrameInfo(object):
         # If this is DWARF version 4 or later, we can have a more precise
         # address size, read from the CIE header.
         if not self.for_eh_frame and entry_structs.dwarf_version >= 4:
-            entry_structs = DWARFStructs(
+            entry_structs = DWARFStructs.get(
                 little_endian=entry_structs.little_endian,
                 dwarf_format=entry_structs.dwarf_format,
                 address_size=header.address_size)
