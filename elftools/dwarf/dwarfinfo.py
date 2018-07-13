@@ -95,7 +95,7 @@ class DWARFInfo(object):
         # This is the DWARFStructs the context uses, so it doesn't depend on
         # DWARF format and address_size (these are determined per CU) - set them
         # to default values.
-        self.structs = DWARFStructs(
+        self.structs = DWARFStructs.get(
             little_endian=self.config.little_endian,
             dwarf_format=32,
             address_size=self.config.default_address_size)
@@ -291,7 +291,7 @@ class DWARFInfo(object):
         # find out address_size is actually 8, we just create a new structs
         # object for this CU.
         #
-        cu_structs = DWARFStructs(
+        cu_structs = DWARFStructs.get(
             little_endian=self.config.little_endian,
             dwarf_format=dwarf_format,
             address_size=4)
@@ -299,7 +299,7 @@ class DWARFInfo(object):
         cu_header = struct_parse(
             cu_structs.Dwarf_CU_header, self.debug_info_sec.stream, offset)
         if cu_header['address_size'] == 8:
-            cu_structs = DWARFStructs(
+            cu_structs = DWARFStructs.get(
                 little_endian=self.config.little_endian,
                 dwarf_format=dwarf_format,
                 address_size=8)
