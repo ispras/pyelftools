@@ -101,6 +101,26 @@ class DWARFStructs(object):
         """
         return 4 if self.dwarf_format == 32 else 12
 
+    _cache_ = {}
+
+    @classmethod
+    def get(cls, little_endian, dwarf_format, address_size, dwarf_version=2):
+        """ Returns `DWARFStructs` instance for given arguments.
+
+            See __init__ for the argument description
+        """
+        cache = cls._cache_
+
+        key = (little_endian, dwarf_format, address_size, dwarf_version)
+
+        if key in cache:
+            structs = cache[key]
+        else:
+            structs = cls(*key)
+            cache[key] = structs
+
+        return structs
+
     def _create_structs(self):
         if self.little_endian:
             self.Dwarf_uint8 = ULInt8
