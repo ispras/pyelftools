@@ -102,6 +102,41 @@ def roundup(num, bits):
     """
     return (num - 1 | (1 << bits) - 1) + 1
 
+
+class lazy(object):
+    """ A decorator for an instance method which morphs the method to a
+        read-only attribute which value is evaluated lazily during first
+        access. Then the value is cached and consequently reused. So, it's
+        evaluated only once.
+
+        The intent of that a decorator is to implement an attribute which value
+        evaluation is a computationally intensive task and its result is always
+        constant.
+
+        Because returned reference will be reused many times, it's robust to
+        return an immutable instance, like `tuple`, if possible.
+
+        Anther application is to create a related instance which is better to
+        reuse across entire program than create multiple copies.
+    """
+
+    def __init__(self, getter):
+        self._getter = getter
+        # Preserve document string.
+        if getter.__doc__:
+            self.__doc__ = getter.__doc__
+
+    def __get__(self, obj, _):
+        getter = self._getter
+        val = getter(obj)
+        # Add evaluated value to `__dict__` of `obj` to prevent consequent call
+        # to `__get__` of this non-data descriptor. Note that direct access to
+        # the `__dict__` instead of `getattr` prevents possible conflict with
+        # custom `__getattr__` / `__getattribute__` implementation.
+        # See: https://docs.python.org/2/howto/descriptor.html
+        obj.__dict__[getter.__name__] = val
+        return val
+
 #------------------------- PRIVATE -------------------------
 
 def _assert_with_exception(cond, msg, exception_type):
