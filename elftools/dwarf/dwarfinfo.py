@@ -9,7 +9,7 @@
 from collections import namedtuple
 
 from ..common.exceptions import DWARFError
-from ..common.utils import (struct_parse, dwarf_assert,
+from ..common.utils import (struct_parse, dwarf_assert, lazy,
                             parse_cstring_from_stream)
 from .structs import DWARFStructs
 from .compileunit import CompileUnit
@@ -164,31 +164,42 @@ class DWARFInfo(object):
         """
         return self.debug_frame_sec is not None
 
-    def CFI_entries(self):
-        """ Get a list of dwarf_frame CFI entries from the .debug_frame section.
+    @lazy
+    def cfi(self):
+        """ Wrapper for .debug_frame section.
         """
-        cfi = CallFrameInfo(
+        return CallFrameInfo(
             stream=self.debug_frame_sec.stream,
             size=self.debug_frame_sec.size,
             address=self.debug_frame_sec.address,
             base_structs=self.structs)
-        return cfi.get_entries()
+
+    def CFI_entries(self):
+        """ Get a list of dwarf_frame CFI entries from the .debug_frame section.
+        """
+        return self.cfi.get_entries()
 
     def has_EH_CFI(self):
         """ Does this dwarf info have a eh_frame CFI section?
         """
         return self.eh_frame_sec is not None
 
-    def EH_CFI_entries(self):
-        """ Get a list of eh_frame CFI entries from the .eh_frame section.
+    @lazy
+    def eh_cfi(self):
+        """ Wrapper for .eh_frame section.
         """
-        cfi = CallFrameInfo(
+        return CallFrameInfo(
             stream=self.eh_frame_sec.stream,
             size=self.eh_frame_sec.size,
             address=self.eh_frame_sec.address,
             base_structs=self.structs,
             for_eh_frame=True)
-        return cfi.get_entries()
+
+    def EH_CFI_entries(self):
+        """ Get a list of eh_frame CFI entries from the .eh_frame section.
+        """
+        return self.eh_cfi.get_entries()
+
 
     def get_pubtypes(self):
         """
