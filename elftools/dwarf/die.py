@@ -11,7 +11,7 @@ import os
 
 from ..common.exceptions import DWARFError
 from ..common.py3compat import bytes2str, iteritems
-from ..common.utils import struct_parse, preserve_stream_pos
+from ..common.utils import struct_parse, preserve_stream_pos, lazy
 from .enums import DW_FORM_raw2name
 
 
@@ -87,6 +87,9 @@ class DIE(object):
         self.abbrev_code = None
         self.size = 0
         self._children = []
+        # Null DIE terminator. It can be used to obtain offset range occupied
+        # by this DIE including its whole subtree.
+        self._terminator = None
         self._parent = None
 
         self._parse_DIE()
@@ -116,10 +119,26 @@ class DIE(object):
         fname = bytes2str(fname_attr.value) if fname_attr else ''
         return os.path.join(comp_dir, fname)
 
-    def iter_children(self):
-        """ Yield all children of this DIE
+    @lazy
+    def children(self):
+        """ Returns a tuple with all children of this DIE
         """
-        return iter(self._children)
+        # Note that lazy value is cached. Hence, it must be immutable.
+        return tuple(self.cu.iter_DIE_children(self))
+
+    def iter_children(self):
+        """ Iterates all children of this DIE
+
+            If you sure that all children will be processed then better
+            iterate `children` attribute.
+        """
+        try:
+            # Try to use lazy `children`.
+            return iter(self.__dict__["children"])
+        except KeyError:
+            # Because a caller may abandon iteration after few children we
+            # must be lazy and do not enforce entire children tuple creation.
+            return self.cu.iter_DIE_children(self)
 
     def iter_siblings(self):
         """ Yield all siblings of this DIE
