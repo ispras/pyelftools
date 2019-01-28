@@ -155,6 +155,32 @@ class CompileUnit(object):
                 terminator = child._terminator
                 cur_offset = terminator.offset + terminator.size
 
+    def get_DIE_at_offset(self, offset):
+        """ Returns arbitrary DIE of that CU.
+
+            offset:
+                is relative to the beginning of this CU header and must exactly
+                points to the first byte of a DIE
+        """
+
+        dm = self._diemap
+        dl = self._dielist
+
+        offset += self.cu_offset
+
+        i = bisect_left(dm, offset)
+        if i < len(dm) and offset == dm[i]:
+            die = dl[i]
+        else:
+            die = DIE(
+                    cu=self,
+                    stream=self.dwarfinfo.debug_info_sec.stream,
+                    offset=offset)
+            dl.insert(i, die)
+            dm.insert(i, offset)
+
+        return die
+
     #------ PRIVATE ------#
 
     def __getitem__(self, name):
