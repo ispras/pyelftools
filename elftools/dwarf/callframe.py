@@ -8,7 +8,9 @@
 #-------------------------------------------------------------------------------
 import copy
 from collections import namedtuple
-from ..common.utils import (struct_parse, dwarf_assert, preserve_stream_pos)
+from ..common.utils import (struct_parse, dwarf_assert, preserve_stream_pos,
+    lazy
+    )
 from ..common.py3compat import iterbytes, iterkeys
 from ..construct import Struct, Switch
 from .enums import DW_EH_encoding_flags
@@ -148,13 +150,19 @@ class CallFrameInfo(object):
             entry_structs.initial_length_field_size())
 
         # At this point self.stream is at the start of the instruction list
-        # for this entry
-        instructions = self._parse_instructions(
-            entry_structs, self.stream.tell(), end_offset)
+        # for this entry. Instructions will be parsed on demand but stream
+        # position must be adjusted to the position just after last
+        # instruction.
+        instructions_start = self.stream.tell()
+        self.stream.seek(end_offset)
 
         if is_CIE:
             self._entry_cache[offset] = CIE(
-                header=header, instructions=instructions, offset=offset,
+                header=header,
+                stream=self.stream,
+                instructions_start=instructions_start,
+                instructions_end=end_offset,
+                offset=offset,
                 augmentation_dict=aug_dict,
                 augmentation_bytes=aug_bytes,
                 structs=entry_structs)
@@ -162,74 +170,14 @@ class CallFrameInfo(object):
         else: # FDE
             cie = self._parse_cie_for_fde(offset, header, entry_structs)
             self._entry_cache[offset] = FDE(
-                header=header, instructions=instructions, offset=offset,
+                header=header,
+                stream=self.stream,
+                instructions_start=instructions_start,
+                instructions_end=end_offset,
+                offset=offset,
                 augmentation_bytes=aug_bytes,
                 structs=entry_structs, cie=cie)
         return self._entry_cache[offset]
-
-    def _parse_instructions(self, structs, offset, end_offset):
-        """ Parse a list of CFI instructions from self.stream, starting with
-            the offset and until (not including) end_offset.
-            Return a list of CallFrameInstruction objects.
-        """
-        instructions = []
-        while offset < end_offset:
-            opcode = struct_parse(structs.Dwarf_uint8(''), self.stream, offset)
-            args = []
-
-            primary = opcode & _PRIMARY_MASK
-            primary_arg = opcode & _PRIMARY_ARG_MASK
-            if primary == DW_CFA_advance_loc:
-                args = [primary_arg]
-            elif primary == DW_CFA_offset:
-                args = [
-                    primary_arg,
-                    struct_parse(structs.Dwarf_uleb128(''), self.stream)]
-            elif primary == DW_CFA_restore:
-                args = [primary_arg]
-            # primary == 0 and real opcode is extended
-            elif opcode in (DW_CFA_nop, DW_CFA_remember_state,
-                            DW_CFA_restore_state):
-                args = []
-            elif opcode == DW_CFA_set_loc:
-                args = [
-                    struct_parse(structs.Dwarf_target_addr(''), self.stream)]
-            elif opcode == DW_CFA_advance_loc1:
-                args = [struct_parse(structs.Dwarf_uint8(''), self.stream)]
-            elif opcode == DW_CFA_advance_loc2:
-                args = [struct_parse(structs.Dwarf_uint16(''), self.stream)]
-            elif opcode == DW_CFA_advance_loc4:
-                args = [struct_parse(structs.Dwarf_uint32(''), self.stream)]
-            elif opcode in (DW_CFA_offset_extended, DW_CFA_register,
-                            DW_CFA_def_cfa, DW_CFA_val_offset):
-                args = [
-                    struct_parse(structs.Dwarf_uleb128(''), self.stream),
-                    struct_parse(structs.Dwarf_uleb128(''), self.stream)]
-            elif opcode in (DW_CFA_restore_extended, DW_CFA_undefined,
-                            DW_CFA_same_value, DW_CFA_def_cfa_register,
-                            DW_CFA_def_cfa_offset):
-                args = [struct_parse(structs.Dwarf_uleb128(''), self.stream)]
-            elif opcode == DW_CFA_def_cfa_offset_sf:
-                args = [struct_parse(structs.Dwarf_sleb128(''), self.stream)]
-            elif opcode == DW_CFA_def_cfa_expression:
-                args = [struct_parse(
-                    structs.Dwarf_dw_form['DW_FORM_block'], self.stream)]
-            elif opcode in (DW_CFA_expression, DW_CFA_val_expression):
-                args = [
-                    struct_parse(structs.Dwarf_uleb128(''), self.stream),
-                    struct_parse(
-                        structs.Dwarf_dw_form['DW_FORM_block'], self.stream)]
-            elif opcode in (DW_CFA_offset_extended_sf,
-                            DW_CFA_def_cfa_sf, DW_CFA_val_offset_sf):
-                args = [
-                    struct_parse(structs.Dwarf_uleb128(''), self.stream),
-                    struct_parse(structs.Dwarf_sleb128(''), self.stream)]
-            else:
-                dwarf_assert(False, 'Unknown CFI opcode: 0x%x' % opcode)
-
-            instructions.append(CallFrameInstruction(opcode=opcode, args=args))
-            offset = self.stream.tell()
-        return instructions
 
     def _parse_cie_for_fde(self, fde_offset, fde_header, entry_structs):
         """ Parse the CIE that corresponds to an FDE.
@@ -435,16 +383,25 @@ class CFIEntry(object):
             CallFrameInfo._parse_cie_augmentation and
             http://www.airs.com/blog/archives/460.
     """
-    def __init__(self, header, structs, instructions, offset,
-            augmentation_dict={}, augmentation_bytes=b'', cie=None):
+
+    def __init__(self, header, structs, stream, instructions_start,
+            instructions_end, offset, augmentation_dict={},
+            augmentation_bytes=b'', cie=None):
         self.header = header
         self.structs = structs
-        self.instructions = instructions
+        self.stream = stream
+        self.instructions_start = instructions_start
+        self.instructions_end = instructions_end
         self.offset = offset
         self.cie = cie
         self._decoded_table = None
         self.augmentation_dict = augmentation_dict
         self.augmentation_bytes = augmentation_bytes
+
+    @lazy
+    def instructions(self):
+        return self._parse_instructions(self.structs, self.instructions_start,
+            self.instructions_end)
 
     def get_decoded(self):
         """ Decode the CFI contained in this entry and return a
@@ -580,6 +537,69 @@ class CFIEntry(object):
 
         return DecodedCallFrameTable(table=table, reg_order=reg_order)
 
+    def _parse_instructions(self, structs, offset, end_offset):
+        """ Parse a list of CFI instructions from self.stream, starting with
+            the offset and until (not including) end_offset.
+            Return a list of CallFrameInstruction objects.
+        """
+        instructions = []
+        while offset < end_offset:
+            opcode = struct_parse(structs.Dwarf_uint8(''), self.stream, offset)
+            args = []
+
+            primary = opcode & _PRIMARY_MASK
+            primary_arg = opcode & _PRIMARY_ARG_MASK
+            if primary == DW_CFA_advance_loc:
+                args = [primary_arg]
+            elif primary == DW_CFA_offset:
+                args = [
+                    primary_arg,
+                    struct_parse(structs.Dwarf_uleb128(''), self.stream)]
+            elif primary == DW_CFA_restore:
+                args = [primary_arg]
+            # primary == 0 and real opcode is extended
+            elif opcode in (DW_CFA_nop, DW_CFA_remember_state,
+                            DW_CFA_restore_state):
+                args = []
+            elif opcode == DW_CFA_set_loc:
+                args = [
+                    struct_parse(structs.Dwarf_target_addr(''), self.stream)]
+            elif opcode == DW_CFA_advance_loc1:
+                args = [struct_parse(structs.Dwarf_uint8(''), self.stream)]
+            elif opcode == DW_CFA_advance_loc2:
+                args = [struct_parse(structs.Dwarf_uint16(''), self.stream)]
+            elif opcode == DW_CFA_advance_loc4:
+                args = [struct_parse(structs.Dwarf_uint32(''), self.stream)]
+            elif opcode in (DW_CFA_offset_extended, DW_CFA_register,
+                            DW_CFA_def_cfa, DW_CFA_val_offset):
+                args = [
+                    struct_parse(structs.Dwarf_uleb128(''), self.stream),
+                    struct_parse(structs.Dwarf_uleb128(''), self.stream)]
+            elif opcode in (DW_CFA_restore_extended, DW_CFA_undefined,
+                            DW_CFA_same_value, DW_CFA_def_cfa_register,
+                            DW_CFA_def_cfa_offset):
+                args = [struct_parse(structs.Dwarf_uleb128(''), self.stream)]
+            elif opcode == DW_CFA_def_cfa_offset_sf:
+                args = [struct_parse(structs.Dwarf_sleb128(''), self.stream)]
+            elif opcode == DW_CFA_def_cfa_expression:
+                args = [struct_parse(
+                    structs.Dwarf_dw_form['DW_FORM_block'], self.stream)]
+            elif opcode in (DW_CFA_expression, DW_CFA_val_expression):
+                args = [
+                    struct_parse(structs.Dwarf_uleb128(''), self.stream),
+                    struct_parse(
+                        structs.Dwarf_dw_form['DW_FORM_block'], self.stream)]
+            elif opcode in (DW_CFA_offset_extended_sf,
+                            DW_CFA_def_cfa_sf, DW_CFA_val_offset_sf):
+                args = [
+                    struct_parse(structs.Dwarf_uleb128(''), self.stream),
+                    struct_parse(structs.Dwarf_sleb128(''), self.stream)]
+            else:
+                dwarf_assert(False, 'Unknown CFI opcode: 0x%x' % opcode)
+
+            instructions.append(CallFrameInstruction(opcode=opcode, args=args))
+            offset = self.stream.tell()
+        return instructions
 
 # A CIE and FDE have exactly the same functionality, except that a FDE has
 # a pointer to its CIE. The functionality was wholly encapsulated in CFIEntry,
