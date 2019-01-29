@@ -27,20 +27,36 @@ class AbbrevTable(object):
         self.stream = stream
         self.offset = offset
 
-        self._abbrev_map = self._parse_abbrev_table()
+        # A lazy parsing is involved. When an unknown code is requested, the
+        # parser is being adjusted until the code is met.
+        self._parser_state = self._abbrev_table_parser()
+        self._abbrev_map = {}
 
     def get_abbrev(self, code):
         """ Get the AbbrevDecl for a given code. Raise KeyError if no
             declaration for this code exists.
         """
-        return self._abbrev_map[code]
+        _map = self._abbrev_map
+        # check if the code has been already parsed
+        if code in _map:
+            return _map[code]
 
-    def _parse_abbrev_table(self):
+        # look for the code in the rest of the table
+        for decl in self._parser_state:
+            _map[decl.code] = decl
+            if decl.code == code:
+                return decl
+
+        # parsing ended, no such code found
+        raise KeyError(code)
+
+    def _abbrev_table_parser(self):
         """ Parse the abbrev table from the stream
         """
-        map = {}
-        self.stream.seek(self.offset)
+        stream = self.stream
+        offset = self.offset
         while True:
+            stream.seek(offset)
             decl_code = struct_parse(
                 struct=self.structs.Dwarf_uleb128(''),
                 stream=self.stream)
@@ -49,8 +65,10 @@ class AbbrevTable(object):
             declaration = struct_parse(
                 struct=self.structs.Dwarf_abbrev_declaration,
                 stream=self.stream)
-            map[decl_code] = AbbrevDecl(decl_code, declaration)
-        return map
+            # Stream offset can be adjusted between yields. So, preserve last
+            # offset locally.
+            offset = stream.tell()
+            yield AbbrevDecl(decl_code, declaration)
 
 
 class AbbrevDecl(object):
