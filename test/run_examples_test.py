@@ -9,6 +9,7 @@
 #-------------------------------------------------------------------------------
 import os, sys
 import logging
+from collections import defaultdict
 from utils import run_exe, is_in_rootdir, dump_output_to_temp_files
 
 # Make it possible to run this file from the root dir of pyelftools without
@@ -40,6 +41,14 @@ def reference_output_path(example_path):
                         example_noext + '.out')
 
 
+EXAMPLE_INPUT_FILE = defaultdict(
+    lambda: './examples/sample_exe64.elf', # default value
+    [
+        ('./examples/var_by_dwarf_name_lut.py', './examples/sample/main')
+    ]
+)
+
+
 def run_example_and_compare(example_path):
     testlog.info("Example '%s'" % example_path)
 
@@ -53,7 +62,7 @@ def run_example_and_compare(example_path):
         return False
 
     rc, example_out = run_exe(example_path, ['--test',
-                                             './examples/sample_exe64.elf'])
+                                             EXAMPLE_INPUT_FILE[example_path]])
     if rc != 0:
         testlog.info('.......ERROR - example returned error code %s' % rc)
         return False
