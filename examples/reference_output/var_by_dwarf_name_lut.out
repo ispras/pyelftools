@@ -1,0 +1,3 @@
+Processing file: ./examples/sample/main
+  Variable "global" is described by DIE at offset 88 in CU at offset 0
+  Variable "global" has type "uint"
