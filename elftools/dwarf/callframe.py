@@ -467,7 +467,7 @@ class CFIEntry(object):
         if isinstance(self, CIE):
             # For a CIE, initialize cur_line to an "empty" line
             cie = self
-            cur_line = dict(pc=0, cfa=None)
+            cur_line = dict(pc=0, cfa=CFARule(reg=0, offset=0))
             reg_order = []
         else: # FDE
             # For a FDE, we need to decode the attached CIE first, because its
