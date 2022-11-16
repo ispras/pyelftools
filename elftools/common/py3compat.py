@@ -14,6 +14,7 @@ if PY3:
     import io
     StringIO = io.StringIO
     BytesIO = io.BytesIO
+    from collections.abc import Mapping
 
     # Functions for acting on bytestrings and strings. In Python 2 and 3,
     # strings and bytes are the same and chr/ord can be used to convert between
@@ -40,6 +41,7 @@ if PY3:
 else:
     import cStringIO
     StringIO = BytesIO = cStringIO.StringIO
+    from collections import Mapping
 
     def bytes2str(b): return b
     def str2bytes(s): return s

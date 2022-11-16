@@ -7,8 +7,8 @@
 # This code is in the public domain
 #-------------------------------------------------------------------------------
 import os
-import collections
 from collections import OrderedDict, namedtuple
+from ..common.py3compat import Mapping
 from ..common.utils import struct_parse
 from bisect import bisect_right
 import math
@@ -16,7 +16,7 @@ from ..construct import CString, Struct, If
 
 NameLUTEntry = namedtuple('NameLUTEntry', 'cu_ofs die_ofs')
 
-class NameLUT(collections.Mapping):
+class NameLUT(Mapping):
     """
     A "Name LUT" holds any of the tables specified by .debug_pubtypes or
     .debug_pubnames sections. This is basically a dictionary where the key is
