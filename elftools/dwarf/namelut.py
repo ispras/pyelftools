@@ -8,13 +8,13 @@
 #-------------------------------------------------------------------------------
 import os
 import collections
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
 from ..common.utils import struct_parse
 from bisect import bisect_right
 import math
 from ..construct import CString, Struct, If
 
-NameLUTEntry = collections.namedtuple('NameLUTEntry', 'cu_ofs die_ofs')
+NameLUTEntry = namedtuple('NameLUTEntry', 'cu_ofs die_ofs')
 
 class NameLUT(collections.Mapping):
     """
